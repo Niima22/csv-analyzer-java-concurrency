@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <title>Analyseur CSV</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+        body {
+            background-color: #fff9c4;
+            font-family: 'Poppins', sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 3em;
+            color: #ff6f00;
+            margin-bottom: 5px;
+        }
+        h2 {
+            color: #444;
+            margin-top: 0;
+            font-size: 1.3em;
+            font-weight: normal;
+        }
+        input, select, button {
+            margin: 10px;
+            padding: 10px;
+            font-family: 'Poppins', sans-serif;
+        }
+        button {
+            background-color: #fbc02d;
+            border: none;
+            color: #333;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #fdd835;
+        }
+        table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 90%;
+            background-color: #fffef5;
+            box-shadow: 0 0 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+        th {
+            background-color: #ffecb3;
+            font-weight: bold;
+        }
+        #columnsCheckboxes {
+            text-align: left;
+            display: inline-block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<h1>Bonjour</h1>
+<h2>Votre outil intelligent pour analyser rapidement vos fichiers CSV volumineux grâce à la programmation concurrente !</h2>
+
+<form id="uploadForm">
+    <input type="file" id="fileInput" name="file" accept=".csv" required />
+    <button type="submit">Analyser le fichier</button>
+</form>
+
+<div id="configSection" style="display:none;">
+    <h3>⚙️ Configuration de l'affichage</h3>
+
+    <label>Colonnes à afficher :</label><br />
+    <div id="columnsCheckboxes"></div><br />
+
+    <label>Nombre de lignes à afficher :</label>
+    <select id="lineLimit">
+        <option value="10">10</option>
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="-1">Toutes</option>
+    </select><br />
+
+    <label>Filtrer sur une colonne :</label>
+    <select id="filterColumn" style="min-width: 200px;"></select>
+
+    <select id="filterCondition">
+        <option value="contains">contient</option>
+        <option value="startsWith">commence par</option>
+        <option value="greaterThan">supérieur à</option>
+    </select>
+
+    <input type="text" id="filterValue" placeholder="Valeur..." />
+    <button id="applyFilter">Appliquer le filtre</button>
+    <button id="resetFilter">Réinitialiser</button>
+</div>
+
+<div id="result"></div>
+
+<script>
+    const form = document.getElementById("uploadForm");
+    const fileInput = document.getElementById("fileInput");
+    const configSection = document.getElementById("configSection");
+    const columnsCheckboxes = document.getElementById("columnsCheckboxes");
+    const filterColumn = document.getElementById("filterColumn");
+    const lineLimit = document.getElementById("lineLimit");
+    const filterCondition = document.getElementById("filterCondition");
+    const filterValue = document.getElementById("filterValue");
+    const resultDiv = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("/api/csv/headers", {
+            method: "POST",
+            body: formData
+        });
+        const headers = await response.json();
+        columnsCheckboxes.innerHTML = "";
+        filterColumn.innerHTML = "";
+
+        headers.forEach(h => {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.name = "columns";
+            checkbox.value = h;
+            checkbox.checked = true;
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(" " + h));
+            columnsCheckboxes.appendChild(label);
+            columnsCheckboxes.appendChild(document.createElement("br"));
+
+            const option = new Option(h, h);
+            filterColumn.appendChild(option);
+        });
+
+        configSection.style.display = "block";
+    });
+
+    function getLimitValue() {
+        const selected = parseInt(lineLimit.value);
+        return selected === -1 ? Number.MAX_SAFE_INTEGER : selected;
+    }
+
+    document.getElementById("applyFilter").addEventListener("click", async () => {
+        const file = fileInput.files[0];
+        const selectedColumns = Array.from(document.querySelectorAll('input[name="columns"]:checked')).map(c => c.value);
+        const filter = {
+            column: filterColumn.value,
+            condition: filterCondition.value,
+            value: filterValue.value,
+            limit: getLimitValue(),
+            columns: selectedColumns
+        };
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("filter", new Blob([JSON.stringify(filter)], {type : 'application/json'}));
+
+        const res = await fetch("/api/csv/filter", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await res.json();
+        resultDiv.innerHTML = "<h3>Résultats</h3>" + buildTable(data);
+    });
+
+    document.getElementById("resetFilter").addEventListener("click", async () => {
+        const file = fileInput.files[0];
+        const selectedColumns = Array.from(document.querySelectorAll('input[name="columns"]:checked')).map(c => c.value);
+        const filter = {
+            column: null,
+            condition: null,
+            value: null,
+            limit: getLimitValue(),
+            columns: selectedColumns
+        };
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("filter", new Blob([JSON.stringify(filter)], {type : 'application/json'}));
+
+        const res = await fetch("/api/csv/filter", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await res.json();
+        resultDiv.innerHTML = "<h3>Résultats</h3>" + buildTable(data);
+    });
+
+    function buildTable(data) {
+        if (!data.length) return "<p style='color: #e53935;'> Aucune donnée ne correspond à votre filtre.</p>";
+        let html = "<table><thead><tr>";
+        Object.keys(data[0]).forEach(k => html += `<th>${k}</th>`);
+        html += "</tr></thead><tbody>";
+        data.forEach(row => {
+            html += "<tr>";
+            Object.values(row).forEach(cell => html += `<td>${cell}</td>`);
+            html += "</tr>";
+        });
+        html += "</tbody></table>";
+        return html;
+    }
+</script>
+</body>
+</html>
